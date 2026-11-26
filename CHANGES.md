@@ -3,6 +3,12 @@
 Weekly summary of changes to gds2palace_mcp, newest week first. Versions are
 those of the package (`gds2palace_mcp.__version__`).
 
+## Week of 2026-11-23 (not released yet)
+
+- **`inspect_stackup` shows the new stackup features of gds2palace 0.13.0:** limits of stackup variables
+  (`variable_limits`), the `priority` of overlapping layers, thermal conductivity per direction
+  (`thermal_conductivity_by_direction`), and the GDS datatype of a layer (`gds_datatype`).
+
 ## Week of 2026-11-16 (0.9.0 and 0.9.1)
 
 ### Tube ports in the port check (0.9.1)
