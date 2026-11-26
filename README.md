@@ -12,6 +12,8 @@ Palace itself runs on Linux: on the simulation servers (ssh) or the WSL/Linux ma
 file, the MCP server starts it, watches it and copies the results back ([Running Palace](https://github.com/VolkerMuehlhaus/gds2palace_mcp/blob/main/docs/README.md#running-palace)).
 Without that file, you run `run_sim` on Linux as before.
 
+gds2palace_mcp is one of several open-source tools for EM simulation of IHP SG13G2 layouts, from KLayout to S-parameters and circuit models. For an overview, see [Which tool for what](https://github.com/VolkerMuehlhaus/gds2palace_ihp_sg13g2/blob/main/doc/toolchain_overview.md).
+
 ## Documentation
 
 **Start with the [user guide (docs/README.md)](https://github.com/VolkerMuehlhaus/gds2palace_mcp/blob/main/docs/README.md).**
