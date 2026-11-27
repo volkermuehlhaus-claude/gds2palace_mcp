@@ -51,6 +51,39 @@ def read_stackup(stackup_file, variable_overrides=None):
     return path, materials_list, dielectrics_list, metals_list
 
 
+def gds_layer(layernum):
+    """(GDS layer number, datatype or None) of a stackup layer's layernum. A layer with a Datatype in the stackup
+    (format 3.2) has a layer id that holds both (68/20 is 10006800020); without one the datatype is None: the
+    layer is read from the datatypes of the script's purposelist."""
+    from gds2palace import stackup_reader
+    split = getattr(stackup_reader, "split_layer_id", None)     # gds2palace 0.13.0
+    return split(int(layernum)) if split is not None else (int(layernum), None)
+
+
+def layer_text(layernum):
+    """A stackup layer's GDS layer as text: "134", or "68/20" with a Datatype."""
+    number, datatype = gds_layer(layernum)
+    return str(number) if datatype is None else f"{number}/{datatype}"
+
+
+def stackup_view(by_spec, metals_list, dielectrics_list=None):
+    """The layout's shapes as the model reads them: by_spec ({(layer, datatype): [point arrays]}) with the shapes
+    of every stackup layer that has a Datatype also under (its layer id, 0). The tools look a stackup layer up as
+    (int(layernum), 0), the way gds2palace's own reader files its polygons, so a layer on 68/20 is found like
+    any other. Stackups without a Datatype give by_spec unchanged."""
+    ids = [m.layernum for m in metals_list.metals]
+    if dielectrics_list is not None:
+        ids += list(dielectrics_list.get_boundary_layers())
+    ids += [o for d in metals_list.derived_layers.derived_layers for o in d.operands]
+    view = None
+    for layer_id in ids:
+        number, datatype = gds_layer(layer_id)
+        if datatype is not None:
+            view = dict(by_spec) if view is None else view
+            view[(int(layer_id), 0)] = by_spec.get((number, datatype), [])
+    return by_spec if view is None else view
+
+
 def model_dir(path):
     """palace_model/<model>_data folder from a model script, a _data folder or a file in it."""
     path = os.path.abspath(path)

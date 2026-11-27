@@ -8,6 +8,12 @@ those of the package (`gds2palace_mcp.__version__`).
 - **`inspect_stackup` shows the new stackup features of gds2palace 0.13.0:** limits of stackup variables
   (`variable_limits`), the `priority` of overlapping layers, thermal conductivity per direction
   (`thermal_conductivity_by_direction`), and the GDS datatype of a layer (`gds_datatype`).
+- **Stackup layers with a Datatype in the layout tools:** `inspect_gds`, `check_ports`, `propose_ports`,
+  `suggest_mesh_size`, `check_layout_complexity`, `check_repeated_patterns`, `measure_holes`, `simplify_layout` and
+  the layout preview's colours now look at the datatype such a layer names (e.g. a line on 68/20), as the model
+  does. Before, they looked at datatype 0 and reported these layers as empty or "not in stackup". `inspect_gds`
+  also marks the other datatypes of such a layer number as not read. Not covered: `propose_ports` finds no pins
+  or labels on these layers. Needs gds_prepare_for_EM 1.9.0.
 
 ## Week of 2026-11-16 (0.9.0 and 0.9.1)
 

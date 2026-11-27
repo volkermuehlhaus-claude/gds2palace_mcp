@@ -25,7 +25,7 @@ def _cell_summary(gds_file, cellname):
 
 
 def check_layout_complexity(gds_file, stackup_file, cellname="", purposelist=(0,), variable_overrides=None):
-    from gds_simplify_for_em import estimate_polygon_count_by_layer
+    from gds_simplify_for_em import estimate_polygon_count, estimate_polygon_count_by_layer
 
     gds_file = os.path.abspath(gds_file)
     start = time.perf_counter()
@@ -34,8 +34,17 @@ def check_layout_complexity(gds_file, stackup_file, cellname="", purposelist=(0,
     cell, tops, (x0, y0, x1, y1) = _cell_summary(gds_file, cellname)
 
     lo, hi = PORT_LAYER_RANGE
+    # a stackup layer with a Datatype is counted on that datatype; its layer number's count from purposelist
+    # is not what the model reads
+    pairs = [k for k in roles if isinstance(k, tuple)]
+    pair_numbers = {k[0] for k in pairs}
     read = {layer: n for layer, n in counts.items() if layer in roles}
-    ports = {layer: n for layer, n in counts.items() if layer not in roles and lo <= layer <= hi}
+    for number, datatype in pairs:
+        n = estimate_polygon_count(gds_file, cellname, [(number, datatype)], None)
+        if n:
+            read[(number, datatype)] = n
+    known = set(roles) | pair_numbers
+    ports = {layer: n for layer, n in counts.items() if layer not in known and lo <= layer <= hi}
     ignored = {layer: n for layer, n in counts.items() if layer not in roles and not lo <= layer <= hi}
     total = sum(read.values())
     width, height = x1 - x0, y1 - y0
@@ -46,7 +55,12 @@ def check_layout_complexity(gds_file, stackup_file, cellname="", purposelist=(0,
     for layer, n in sorted(read.items(), key=lambda item: -item[1]):
         share = n / total if total else 0.0
         role = roles[layer]
-        layers.append({"layer": layer, "polygons": n, "share": round(share, 3), "stackup_role": role})
+        if isinstance(layer, tuple):        # with a Datatype in the stackup: "68/20" in the texts below
+            layers.append({"layer": layer[0], "datatype": layer[1], "polygons": n, "share": round(share, 3),
+                           "stackup_role": role})
+            layer = f"{layer[0]}/{layer[1]}"
+        else:
+            layers.append({"layer": layer, "polygons": n, "share": round(share, 3), "stackup_role": role})
         if share >= HINT_SHARE and n >= HINT_MIN_POLYGONS:
             if any(r.startswith("via ") for r in role):
                 hints.append(f"Layer {layer} ({', '.join(role)}) has {share:.0%} of the polygons: probably via arrays. "
@@ -113,8 +127,11 @@ def simplify_layout(gds_file, stackup_file, output_file="", cellname="", remove_
     _, _, _, metals_list = read_stackup(stackup_file, variable_overrides)
     excluded = {int(n) for n in exclude_layers or []}
     metal_layers, via_layers = layers_from_stackup(metals_list, PORT_LAYER_RANGE)
-    metal_layers = [n for n in metal_layers if n not in excluded]
-    via_layers = [v for v in via_layers if v[0] not in excluded]
+
+    def number(spec):       # an entry is a layer number, or (layer, datatype) for a stackup layer with a Datatype
+        return spec[0] if isinstance(spec, tuple) else spec
+    metal_layers = [n for n in metal_layers if number(n) not in excluded]
+    via_layers = [v for v in via_layers if number(v[0]) not in excluded]
 
     before = estimate_polygon_count_by_layer(gds_file, cellname, [0])
     design_name = _cell_summary(gds_file, cellname)[0]

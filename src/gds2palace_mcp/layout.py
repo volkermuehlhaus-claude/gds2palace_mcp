@@ -4,7 +4,7 @@ import os
 
 import numpy as np
 
-from .common import read_stackup
+from .common import gds_layer, read_stackup
 
 # merging and gap search get slow on dummy fill; above this, only counts and extents are reported
 MAX_SHAPES_FOR_GAPS = 20000
@@ -57,15 +57,29 @@ def _gap_and_width(polygons):
 
 def _stackup_layer_roles(stackup_file, variable_overrides):
     path, _, dielectrics_list, metals_list = read_stackup(stackup_file, variable_overrides)
-    roles = {}
+    roles = {}          # GDS layer number, or (layer number, datatype) for a stackup layer with a Datatype
+    def key(layernum):
+        number, datatype = gds_layer(layernum)
+        return number if datatype is None else (number, datatype)
     for m in metals_list.metals:
-        roles.setdefault(int(m.layernum), []).append(f"{m.type.lower()} {m.name}")
+        roles.setdefault(key(m.layernum), []).append(f"{m.type.lower()} {m.name}")
     for n in dielectrics_list.get_boundary_layers():
-        roles.setdefault(int(n), []).append("dielectric boundary")
+        roles.setdefault(key(n), []).append("dielectric boundary")
     for d in metals_list.derived_layers.derived_layers:
         for o in d.operands:
-            roles.setdefault(int(o), []).append(f"operand of derived layer {d.name} ({d.layernum})")
+            roles.setdefault(key(o), []).append(f"operand of derived layer {d.name} ({d.layernum})")
     return path, roles
+
+
+def layer_role(roles, layer, datatype):
+    """The stackup role of the shapes on layer/datatype, or None: a stackup layer with a Datatype owns exactly that
+    datatype, one without owns the layer number."""
+    return roles.get((int(layer), int(datatype))) or roles.get(int(layer))
+
+
+def other_datatypes(roles, layer):
+    """The datatypes the stackup reads on this layer number, when it names them (else [])."""
+    return sorted(k[1] for k in roles if isinstance(k, tuple) and k[0] == int(layer))
 
 
 def inspect_gds(gds_file, cellname="", stackup_file="", variable_overrides=None):
@@ -97,8 +111,12 @@ def inspect_gds(gds_file, cellname="", stackup_file="", variable_overrides=None)
         if gap_note:
             entry["gap_note"] = gap_note
         if stackup_file:
-            if layer in roles:
-                entry["stackup_role"] = roles[layer]
+            role = layer_role(roles, layer, datatype)
+            if role:
+                entry["stackup_role"] = role
+            elif other_datatypes(roles, layer):
+                read = ", ".join(f"{layer}/{d}" for d in other_datatypes(roles, layer))
+                entry["stackup_role"] = [f"not read: the stackup reads this layer number from {read}"]
             elif 201 <= layer <= 249:
                 entry["stackup_role"] = ["not in stackup: conventional port/thermal layer range"]
             else:

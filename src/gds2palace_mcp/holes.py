@@ -8,7 +8,7 @@ are candidates, and only sizes that repeat at least mincount times are filled.
 
 import os
 
-from .common import captured_output, read_stackup
+from .common import captured_output, gds_layer, read_stackup
 
 
 def measure_holes(gds_file, stackup_file, cellname="", mincount=20, variable_overrides=None):
@@ -18,7 +18,10 @@ def measure_holes(gds_file, stackup_file, cellname="", mincount=20, variable_ove
 
     _, _, _, metals_list = read_stackup(stackup_file, variable_overrides)
     metal_layers, _ = layers_from_stackup(metals_list)
-    names = {int(m.layernum): m.name for m in metals_list.metals}
+    names = {}
+    for m in metals_list.metals:
+        number, layer_datatype = gds_layer(m.layernum)
+        names.setdefault(number if layer_datatype is None else (number, layer_datatype), m.name)
     library, cell, note = _layout(gds_file, cellname)
     um = library.unit / 1e-6
     with captured_output():
@@ -37,7 +40,7 @@ def measure_holes(gds_file, stackup_file, cellname="", mincount=20, variable_ove
         other = sorted((describe(s, h) for s, h in v["other"].items()),
                        key=lambda d: -d["size_um"][0] * d["size_um"][1])
         to_fill += sum(d["count"] for d in repeated)
-        layers.append({"layer": layer, "datatype": datatype, "name": names.get(layer),
+        layers.append({"layer": layer, "datatype": datatype, "name": names.get((layer, datatype)) or names.get(layer),
                        "ground_planes": v["ground_planes"], "repeated_openings": repeated,
                        "other_openings": other[:5], "other_openings_total": sum(d["count"] for d in other),
                        "holes_outside_ground_planes": v["outside_ground"]})

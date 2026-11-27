@@ -5,7 +5,7 @@ import os
 
 import numpy as np
 
-from .common import read_stackup
+from .common import layer_text, read_stackup, stackup_view
 
 # refined_cellsize defaults in microns (AGENTS.md template / mesh convergence studies)
 DEFAULT_ACCURATE_UM = 2.0
@@ -113,6 +113,12 @@ def _facing_pairs(geometry, edges, max_dist, min_overlap):
     return pairs
 
 
+def _reported(layer):
+    """A layer in the result: its GDS layer number, or "68/20" for a stackup layer with a Datatype."""
+    text = layer_text(layer)
+    return text if "/" in text else int(text)
+
+
 def suggest_mesh_size(gds_file, stackup_file, cellname="", variable_overrides=None):
     import shapely
     from shapely.geometry import Polygon
@@ -125,7 +131,7 @@ def suggest_mesh_size(gds_file, stackup_file, cellname="", variable_overrides=No
     um = library.unit / 1e-6              # layout units -> microns
 
     _, _, dielectrics_list, metals_list = read_stackup(stackup_file, variable_overrides)
-    by_spec = _by_spec(cell)
+    by_spec = stackup_view(_by_spec(cell), metals_list, dielectrics_list)
     drawn = {int(l) for (l, d), ps in by_spec.items() if int(d) == 0 and len(ps)}
 
     # the top conductor layers that have shapes in this layout
@@ -142,7 +148,8 @@ def suggest_mesh_size(gds_file, stackup_file, cellname="", variable_overrides=No
     stackup_layers = {int(m.layernum) for m in metals_list.metals} | set(dielectrics_list.get_boundary_layers())
     points = [p for (l, d), ps in by_spec.items() if int(l) in stackup_layers and int(d) == 0 for p in ps]
     if not points:
-        raise ValueError("The layout has no shapes on the stackup's layers (datatype 0).")
+        raise ValueError("The layout has no shapes on the stackup's layers (datatype 0, or the Datatype a "
+                         "stackup layer names).")
     allpts = np.vstack(points)
     size = float(max(allpts.max(axis=0) - allpts.min(axis=0)))     # larger bbox side, layout units
     relevant = RELEVANT_FRACTION * size
@@ -152,7 +159,7 @@ def suggest_mesh_size(gds_file, stackup_file, cellname="", variable_overrides=No
         polys = [Polygon(p).buffer(0) for (l, d), ps in by_spec.items() if int(l) == layer and int(d) == 0
                  for p in ps if len(p) >= 3]
         if not polys:
-            layers_report.append({"layer": layer, "name": name, "shapes": 0})
+            layers_report.append({"layer": _reported(layer), "name": name, "shapes": 0})
             continue
         geometry = shapely.unary_union(polys)
         edges = _edges(geometry)
@@ -174,7 +181,7 @@ def suggest_mesh_size(gds_file, stackup_file, cellname="", variable_overrides=No
         for width_um, g in sorted(groups.items()):
             length = g["length"]
             if length >= TRACE_ASPECT * width_um / um and length >= relevant:
-                traces.append({"layer": layer, "name": name, "width_um": width_um,
+                traces.append({"layer": _reported(layer), "name": name, "width_um": width_um,
                                "length_um": round(length * um, 1),
                                "at": [round(float(c) * um, 2) for c in g["at"]]})
 
@@ -187,11 +194,11 @@ def suggest_mesh_size(gds_file, stackup_file, cellname="", variable_overrides=No
                 continue
             narrower = min(widths)
             if dist <= COUPLING_GAP_FACTOR * narrower:
-                coupled.append({"layer": layer, "name": name, "gap_um": round(dist * um, 3),
+                coupled.append({"layer": _reported(layer), "name": name, "gap_um": round(dist * um, 3),
                                 "line_widths_um": [round(w * um, 3) for w in widths],
                                 "parallel_length_um": round(overlap * um, 1),
                                 "at": [round(float(c) * um, 2) for c in (a + b) / 2]})
-        layers_report.append({"layer": layer, "name": name, "shapes": len(polys)})
+        layers_report.append({"layer": _reported(layer), "name": name, "shapes": len(polys)})
 
     coupled.sort(key=lambda c: (c["gap_um"], -c["parallel_length_um"]))
     traces.sort(key=lambda t: t["width_um"])

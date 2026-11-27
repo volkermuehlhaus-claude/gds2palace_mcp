@@ -9,7 +9,7 @@ as a size class with many members, at the cost of inspecting each cell once.
 import math
 import os
 
-from .common import read_stackup
+from .common import gds_layer, read_stackup
 
 MINCOUNT = 20                  # a size class with this many members is a repeated pattern
 # preprocessing is recommended from this many polygons in repeated patterns on: a judgment, not a measured
@@ -67,15 +67,21 @@ def check_repeated_patterns(gds_file, stackup_file, cellname="", mincount=MINCOU
     from gds_simplify_for_em import open_gds_cell
 
     _, _, dielectrics_list, metals_list = read_stackup(stackup_file, variable_overrides)
-    by_layer = {}
+    by_layer = {}         # GDS layer number -> stackup layer, read from the datatypes of purposelist
+    by_pair = {}          # (layer number, datatype) -> stackup layer with that Datatype
     for m in metals_list.metals:
-        by_layer.setdefault(int(m.layernum), m)
+        number, layer_datatype = gds_layer(m.layernum)
+        if layer_datatype is None:
+            by_layer.setdefault(number, m)
+        else:
+            by_pair.setdefault((number, layer_datatype), m)
+    pair_numbers = {number for number, _ in by_pair}
     library, top = open_gds_cell(os.path.abspath(gds_file), cellname)
     um = library.unit / 1e-6
     count, arrays, cells = _placements(library, top)
 
     classes = {}          # (layer, datatype, w, h) -> statistics
-    edge_um = {}          # layer -> metal edge length to mesh (all shapes, read datatypes)
+    edge_um = {}          # stackup layer name -> metal edge length to mesh (all shapes, read datatypes)
     total = 0
     for cell in cells:
         placed = count[cell.name]
@@ -84,15 +90,19 @@ def check_repeated_patterns(gds_file, stackup_file, cellname="", mincount=MINCOU
         for polygon in cell.polygons:
             for pts, layer, datatype in [(polygon.points, polygon.layer, polygon.datatype)]:
                 layer, datatype = int(layer), int(datatype)
-                if layer not in by_layer:
+                if layer not in by_layer and layer not in pair_numbers:
                     continue
-                read = not purposelist or datatype in purposelist
+                if (layer, datatype) in by_pair:
+                    read = True                     # the stackup names this datatype
+                else:
+                    read = layer in by_layer and (not purposelist or datatype in purposelist)
                 x0, y0 = pts.min(axis=0)
                 x1, y1 = pts.max(axis=0)
                 if read:
                     total += placed
                     perimeter = float(np.sum(np.hypot(*np.diff(np.vstack([pts, pts[:1]]), axis=0).T)))
-                    edge_um[layer] = edge_um.get(layer, 0.0) + perimeter * um * placed
+                    name = (by_pair.get((layer, datatype)) or by_layer[layer]).name
+                    edge_um[name] = edge_um.get(name, 0.0) + perimeter * um * placed
                 key = (layer, datatype, round((x1 - x0) * um / SIZE_TOL_UM), round((y1 - y0) * um / SIZE_TOL_UM))
                 c = classes.setdefault(key, {"count": 0, "cells": {}, "sample": pts, "read": read})
                 c["count"] += placed
@@ -102,7 +112,8 @@ def check_repeated_patterns(gds_file, stackup_file, cellname="", mincount=MINCOU
     for (layer, datatype, w, h), c in sorted(classes.items(), key=lambda kv: -kv[1]["count"]):
         if c["count"] < mincount:
             continue
-        metal = by_layer[layer]
+        metal = by_pair.get((layer, datatype)) or by_layer.get(layer) or by_pair[
+            next(k for k in by_pair if k[0] == layer)]
         decomp = decompose_polygon_holes(c["sample"])
         holes = decomp is not None and bool(decomp["holes"])
         # the cell that contributes most, and whether its arrays put the tiles edge to edge
@@ -142,7 +153,7 @@ def check_repeated_patterns(gds_file, stackup_file, cellname="", mincount=MINCOU
         "gds_file": os.path.abspath(gds_file), "cell": top.name, "cells_in_hierarchy": len(cells),
         "polygons_read_by_model": total, "polygons_in_repeated_patterns": repeated,
         "repeated_share": round(share, 3),
-        "metal_edge_length_mm": {by_layer[l].name: round(v / 1000, 2) for l, v in
+        "metal_edge_length_mm": {name: round(v / 1000, 2) for name, v in
                                  sorted(edge_um.items(), key=lambda kv: -kv[1])},
         "preprocessing_candidates": [c for c in candidates if c["read_by_model"]][:15],
         "not_read_by_model": [{"name": c["name"], "datatype": c["datatype"], "count": c["count"]}

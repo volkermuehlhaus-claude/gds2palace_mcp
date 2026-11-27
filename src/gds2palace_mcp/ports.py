@@ -3,7 +3,7 @@
 import ast
 import os
 
-from .common import read_stackup
+from .common import layer_text, read_stackup, stackup_view
 
 COVERAGE_OK = 0.99            # share of a port line / port end that must lie on metal
 EDGE_FRACTION = 0.02          # trace ends: within this share of the signal layers' extent from their edge
@@ -98,7 +98,7 @@ def check_ports(gds_file, stackup_file, ports, cellname="", variable_overrides=N
     _, _, dielectrics_list, metals_list = read_stackup(stackup_file, variable_overrides)
     library, cell, note = _layout(gds_file, cellname)
     tol = 1e-3 * 1e-6 / library.unit          # 1 nm in layout units
-    by_spec = _by_spec(cell)
+    by_spec = stackup_view(_by_spec(cell), metals_list, dielectrics_list)
     by_name = {m.name: m for m in metals_list.metals}
     stackup_layers = {int(m.layernum) for m in metals_list.metals} | set(dielectrics_list.get_boundary_layers())
     derived_outputs = {d.name for d in metals_list.derived_layers.derived_layers}
@@ -271,7 +271,7 @@ def _reference_for(line, signal, metals_list, by_spec, layout_area, tol):
         covered = _coverage(line, _metal(by_spec, int(subgnd.layernum)), tol) >= COVERAGE_OK
         return subgnd.name, ("SUBGND shape under the port" if covered else
                              "no ground metal below; SUBGND has no shape under the port yet: draw SUBGND "
-                             f"(GDS layer {int(subgnd.layernum)}) under the port, or choose another reference")
+                             f"(GDS layer {layer_text(subgnd.layernum)}) under the port, or choose another reference")
     return None, "no ground metal below the port found: choose the reference layer"
 
 
@@ -282,7 +282,7 @@ def propose_ports(gds_file, stackup_file, cellname="", variable_overrides=None):
     _, _, dielectrics_list, metals_list = read_stackup(stackup_file, variable_overrides)
     library, cell, note = _layout(gds_file, cellname)
     tol = 1e-3 * 1e-6 / library.unit
-    by_spec = _by_spec(cell)
+    by_spec = stackup_view(_by_spec(cell), metals_list, dielectrics_list)
     drawn = {int(l) for (l, d), ps in by_spec.items() if int(d) == 0 and len(ps)}
     stackup_layers = {int(m.layernum) for m in metals_list.metals} | set(dielectrics_list.get_boundary_layers())
     conductor_layers = {int(m.layernum): m for m in metals_list.metals if m.is_metal}

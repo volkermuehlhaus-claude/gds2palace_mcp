@@ -77,14 +77,15 @@ def _distinct_color(used):
 
 def _stackup_colors(stackup_file, variable_overrides, drawn_layers):
     """{layer: color} bottom to top, outline layers and a legend, from the stackup's material colors."""
-    from .common import read_stackup
+    from .common import gds_layer, read_stackup
     _, materials_list, dielectrics_list, metals_list = read_stackup(stackup_file, variable_overrides)
     material_color = {m.name: m.color for m in materials_list.materials if m.color}
 
     drawn = {}
     for m in metals_list.metals:
-        if int(m.layernum) in drawn_layers:
-            drawn.setdefault(int(m.layernum), m)
+        number = gds_layer(m.layernum)[0]       # the picture is drawn by GDS layer number
+        if number in drawn_layers:
+            drawn.setdefault(number, m)
 
     # conductors choose first, so that a via with its metal's color gets a different one
     chosen, used = {}, set()
